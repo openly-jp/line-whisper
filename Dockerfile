@@ -1,13 +1,17 @@
 FROM python:3.9-slim
 
 WORKDIR /api
+COPY ./api/ .
 
 RUN apt-get update && \
     apt-get -y install ffmpeg libavcodec-extra
 COPY requirements.txt .
+COPY gunicorn.conf.py .
+
 RUN pip install --no-cache-dir --upgrade -r requirements.txt
-COPY ./api/ .
 
-EXPOSE 8080
+EXPOSE 80
 
-CMD ["gunicorn", "main:app", "-w", "2", "-k", "uvicorn.workers.UvicornWorker", "-b", "0.0.0.0:8080"]
+COPY entrypoint.sh /usr/local/bin
+RUN chmod +x /usr/local/bin/entrypoint.sh
+CMD ["entrypoint.sh"]
