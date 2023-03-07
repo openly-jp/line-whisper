@@ -1,0 +1,25 @@
+version: "3.0"
+
+services:
+  server:
+    container_name: "server"
+    build: .
+    ports:
+      - 8080:8080
+    volumes:
+      - ./api:/api
+      - ./audio:/audio
+    env_file: .env
+  
+  localtunnel:
+    container_name: "localtunnel"
+    image: efrecon/localtunnel
+    restart: on-failure
+    command:
+      --local-host server --port 8080 --subdomain $SUBDOMAIN
+    environment:
+      - SUBDOMAIN=${SUBDOMAIN}
+    links:
+      - server
+    depends_on:
+      - server

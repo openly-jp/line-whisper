@@ -1,0 +1,12 @@
+version: "3.0"
+
+services:
+  server:
+    container_name: "server"
+    build: .
+    ports:
+      - 8080:8080
+    volumes:
+      - ./api:/api
+      - ./audio:/audio
+    env_file: .env

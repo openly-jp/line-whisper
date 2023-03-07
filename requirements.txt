@@ -1,0 +1,6 @@
+line-bot-sdk
+uvicorn[standard]
+fastapi
+openai
+supabase
+pydub
