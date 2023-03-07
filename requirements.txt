@@ -4,3 +4,4 @@ fastapi
 openai
 supabase
 pydub
+gunicorn

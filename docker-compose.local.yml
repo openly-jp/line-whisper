@@ -3,14 +3,15 @@ version: "3.0"
 services:
   server:
     container_name: "server"
-    build: .
+    build:
+      context: .
     ports:
       - 8080:8080
     volumes:
       - ./api:/api
       - ./audio:/audio
     env_file: .env
-  
+
   localtunnel:
     container_name: "localtunnel"
     image: efrecon/localtunnel

@@ -1,8 +1,7 @@
-from fastapi import FastAPI, File, Request, BackgroundTasks, HTTPException
+from fastapi import FastAPI, Request, HTTPException
 
 import time
 import os
-import uuid
 import re
 import requests
 from supabase import create_client, Client
