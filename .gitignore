@@ -4,3 +4,4 @@ venv
 audio/
 __pycache__
 .DS_Store
+logs/

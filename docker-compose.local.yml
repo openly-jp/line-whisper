@@ -9,6 +9,7 @@ services:
       - 80:80
     volumes:
       - ./audio:/audio
+      - ./logs:/logs
     env_file: .env
 
   localtunnel:

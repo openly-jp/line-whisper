@@ -1,6 +1,7 @@
 from fastapi import FastAPI, Request, HTTPException
 
 import time
+import math
 import os
 import re
 import requests
@@ -24,17 +25,21 @@ LINEAPI_ACCESS_TOKEN = os.getenv("LINEAPI_ACCESS_TOKEN")
 LINEAPI_SECRET = os.getenv("LINEAPI_SECRET")
 line_bot_api = LineBotApi(LINEAPI_ACCESS_TOKEN)
 parser = WebhookParser(LINEAPI_SECRET)
+handler = WebhookHandler(LINEAPI_SECRET)
 
 openai.organization = os.getenv("OPENAI_ORGANIZATION")
 openai.api_key = os.getenv("OPENAI_API_KEY")
-url: str = os.getenv("SUPABASE_URL")
-key: str = os.getenv("SUPABASE_KEY")
-supabase: Client = create_client(url, key)
+
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+
 app = FastAPI()
-handler = WebhookHandler(LINEAPI_SECRET)
 
 ACCEPT_FILE_EXTENSIONS = ["m4a", "mp3", "mp4", "mpeg", "mpga", "wav", "webm"]
-LIMITATION_SEC = 180
+LIMITATION_SEC = int(os.getenv("LIMITATION_SEC"))
+LIMITATION_FILE_SIZE_MB = int(os.getenv("LIMITATION_FILE_SIZE_MB"))
+LIMITATION_FILE_SIZE = LIMITATION_FILE_SIZE_MB * 1024 * 1024
 
 @app.post("/callback")
 async def handle_request(request: Request):
@@ -86,17 +91,24 @@ def handle_message_content(event, message_content):
         file_id = event.message.id
         matched_extension = matched_extension.group(0)
         audio_file_path = f'/audio/{file_id}.{matched_extension}'
+        total_file_size = 0
         with open(audio_file_path, 'wb') as fd:
-            # TODO: ここでファイルサイズをチェックし、大きすぎる場合はエラーを返す
-            # TODO: ファイル書き込みを行わずに、直接openai.Audio.transcribeに渡す -> メモリを考慮するとできなそう
+            # TODO: ファイル書き込みを行わずに、直接openai.Audio.transcribeに渡す
             for chunk in message_content.iter_content():
+                # check file size is under 25MB
+                if total_file_size > LIMITATION_FILE_SIZE:
+                    line_bot_api.reply_message(
+                        event.reply_token,
+                        TextSendMessage(text=f"ファイルサイズが大きすぎるみたいです・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信してください！"))
+                    return
                 fd.write(chunk)
+                total_file_size += len(chunk)
         try:
             user_id = event.source.user_id
-            text = transcribe(audio_file_path, matched_extension, user_id)
+            text, additional_comment = transcribe(audio_file_path, matched_extension, user_id)
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=text))
+                TextSendMessage(text=text + "\n\n" + additional_comment if additional_comment else text))
         except TranscriptionFailureError:
             line_bot_api.reply_message(
                 event.reply_token,
@@ -104,19 +116,15 @@ def handle_message_content(event, message_content):
         except FileSizeError:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="ファイルサイズが大きすぎるみたいです・・・"))
+                TextSendMessage(text=f"ファイルサイズが大きすぎるみたいです・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信してください！"))
         except FileCorruptionError:
             line_bot_api.reply_message(
                 event.reply_token,
                 TextSendMessage(text="ファイルが壊れているみたいです・・・"))
         except UsageLimitError as e:
-            if e.remaining_sec < 60:
-                remaining_time_text = str(int(e.remaining_sec)) + "秒"
-            else:
-                remaining_time_text = str(e.remaining_sec // 60) + "分"
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="利用制限時間を超えちゃうみたいです・・・\n残りの利用可能時間は" + remaining_time_text + "です！"))
+                TextSendMessage(text="利用制限時間を超えちゃうみたいです・・・\n残りの利用可能時間は" + get_remaining_time_text(e.remaining_sec) + "です！"))
         except Exception as e:
             line_bot_api.reply_message(
                 event.reply_token,
@@ -134,6 +142,7 @@ def transcribe(audio_file_path, extension, user_id):
         audio = AudioSegment.from_file(audio_file_path, extension)
     except Exception as e:
         raise FileCorruptionError
+    additional_comment = None
     duration_sec = audio.duration_seconds
     data = supabase.table('usage_counter').select('usage_sec').filter('user_id', 'eq', user_id).execute().data
     if len(data) == 0:
@@ -141,14 +150,32 @@ def transcribe(audio_file_path, extension, user_id):
     else:
         usage_sec = data[0]['usage_sec'] + duration_sec
     if usage_sec > LIMITATION_SEC:
-        raise UsageLimitError(remaining_sec=LIMITATION_SEC - data[0]['usage_sec'])
-    supabase.table('usage_counter').upsert({'user_id': user_id, 'usage_sec': usage_sec}).execute()
+        remaining_sec = LIMITATION_SEC - data[0]['usage_sec']
+        if remaining_sec < 1:
+            raise UsageLimitError(remaining_sec=0)
+        else:
+            # transcribe only remaining time
+            # PyDub handles time in milliseconds
+            audio = audio[:math.floor(remaining_sec * 1000)]
+            # PyDub cannot export m4a file so convert it to mp3
+            audio.export(audio_file_path, format=extension if extension != "m4a" else "mp3")
+            usage_sec = data[0]['usage_sec'] + remaining_sec
+            additional_comment = "利用制限時間を超えちゃったので、冒頭の" + get_remaining_time_text(remaining_sec) + "だけ書き起こしました！"
     audio_file= open(audio_file_path, "rb")
     try:
-        transcript = openai.Audio.transcribe("whisper-1", audio_file)
+        # TODO: 以下の部分を非同期に行うことで他のユーザーのリクエストを処理できるようにする
+        transcript = openai.Audio.transcribe("whisper-1", audio_file, language="ja")
         text = transcript.get("text", "")
-        return text
+        supabase.table('usage_counter').upsert({'user_id': user_id, 'usage_sec': usage_sec}).execute()
+        return text, additional_comment
     except Exception as e:
         raise TranscriptionFailureError
     finally:
         audio_file.close()
+
+def get_remaining_time_text(remaining_sec):
+    if remaining_sec < 60:
+        remaining_time_text = str(int(remaining_sec)) + "秒"
+    else:
+        remaining_time_text = str(remaining_sec // 60) + "分"
+    return remaining_time_text
