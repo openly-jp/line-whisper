@@ -87,7 +87,7 @@ def handle_audio_message(event):
     else:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="音声ファイルの取得に失敗しちゃいました・・・"))
+            TextSendMessage(text="音声ファイルの取得に失敗したのじゃ・・・"))
 
 @handler.add(MessageEvent, message=VideoMessage)
 def handle_video_message(event):
@@ -105,7 +105,7 @@ def handle_video_message(event):
     else:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="動画ファイルの取得に失敗しちゃいました・・・"))
+            TextSendMessage(text="動画ファイルの取得に失敗したのじゃ・・・"))
 
 
 @handler.default()
@@ -128,7 +128,7 @@ def handle_message_content(event, message_content):
                 if total_file_size > LIMITATION_FILE_SIZE:
                     line_bot_api.reply_message(
                         event.reply_token,
-                        TextSendMessage(text=f"ファイルサイズが大きすぎるみたいです・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信してください！"))
+                        TextSendMessage(text=f"ファイルサイズが大きすぎるようじゃ・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信するのじゃ！"))
                     return
                 fd.write(chunk)
                 total_file_size += len(chunk)
@@ -141,29 +141,29 @@ def handle_message_content(event, message_content):
         except TranscriptionFailureError:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="書き起こしに失敗しちゃいました・・・もう一度お試しください！"))
+                TextSendMessage(text="書き起こしに失敗したのじゃ・・・もう一度お試しくだされ！"))
         except FileSizeError:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text=f"ファイルサイズが大きすぎるみたいです・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信してください！"))
+                TextSendMessage(text=f"ファイルサイズが大きすぎるみたいじゃ・・・\n{LIMITATION_FILE_SIZE_MB}MB以下のファイルを送信するのじゃ！"))
         except FileCorruptionError:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="ファイルが壊れているみたいです・・・"))
+                TextSendMessage(text="ファイルが壊れているみたいじゃ・・・"))
         except UsageLimitError as e:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="利用制限時間を超えちゃうみたいです・・・\n残りの利用可能時間は" + get_remaining_time_text(e.remaining_sec) + "です！"))
+                TextSendMessage(text="利用制限時間を超えちゃうようじゃ・・・\n残りの利用可能時間は" + get_remaining_time_text(e.remaining_sec) + "らしいぞ！"))
         except Exception as e:
             line_bot_api.reply_message(
                 event.reply_token,
-                TextSendMessage(text="予期せぬエラーが発生しました・・・"))
+                TextSendMessage(text="予期せぬエラーが発生したのじゃ・・・"))
         finally:
             os.remove(audio_file_path)
     else:
         line_bot_api.reply_message(
             event.reply_token,
-            TextSendMessage(text="対応していないファイル形式です・・・\n以下のファイル形式で試してみてね!\n" + ", ".join(ACCEPT_FILE_EXTENSIONS)))
+            TextSendMessage(text="対応していないファイル形式のようじゃの・・・\n以下のファイル形式で試すのじゃ!\n" + ", ".join(ACCEPT_FILE_EXTENSIONS)))
 
 
 def transcribe(audio_file_path, extension, user_id):
@@ -189,7 +189,7 @@ def transcribe(audio_file_path, extension, user_id):
             # PyDub cannot export m4a file so convert it to mp3
             audio.export(audio_file_path, format=extension if extension != "m4a" else "mp3")
             usage_sec = data[0]['usage_sec'] + remaining_sec
-            additional_comment = "利用制限時間を超えちゃったので、冒頭の" + get_remaining_time_text(remaining_sec) + "だけ書き起こしました！"
+            additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(remaining_sec) + "だけ書き起こしたぞ！"
     audio_file= open(audio_file_path, "rb")
     try:
         # TODO: 以下の部分を非同期に行うことで他のユーザーのリクエストを処理できるようにする
@@ -206,5 +206,5 @@ def get_remaining_time_text(remaining_sec):
     if remaining_sec < 60:
         remaining_time_text = str(int(remaining_sec)) + "秒"
     else:
-        remaining_time_text = str(remaining_sec // 60) + "分"
+        remaining_time_text = str(int(remaining_sec // 60)) + "分"
     return remaining_time_text
