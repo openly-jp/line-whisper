@@ -144,7 +144,7 @@ def transcribe(audio_file_path, extension, user_id):
         raise FileCorruptionError
     additional_comment = None
     duration_sec = audio.duration_seconds
-    data = supabase.table('usage_counter').select('usage_sec').filter('user_id', 'eq', user_id).execute().data
+    data = supabase.table('user_info').select('usage_sec').filter('id', 'eq', user_id).execute().data
     if len(data) == 0:
         usage_sec = duration_sec
     else:
@@ -166,7 +166,7 @@ def transcribe(audio_file_path, extension, user_id):
         # TODO: 以下の部分を非同期に行うことで他のユーザーのリクエストを処理できるようにする
         transcript = openai.Audio.transcribe("whisper-1", audio_file, language="ja")
         text = transcript.get("text", "")
-        supabase.table('usage_counter').upsert({'user_id': user_id, 'usage_sec': usage_sec}).execute()
+        supabase.table('user_info').upsert({'id': user_id, 'usage_sec': usage_sec}).execute()
         return text, additional_comment
     except Exception as e:
         raise TranscriptionFailureError
