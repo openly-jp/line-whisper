@@ -15,7 +15,7 @@ from linebot.exceptions import (
 )
 
 from linebot.models import (
-    MessageEvent, FileMessage, TextSendMessage, AudioMessage
+    MessageEvent, FileMessage, TextSendMessage, AudioMessage, VideoMessage
 )
 import openai
 
@@ -36,7 +36,18 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
 
-ACCEPT_FILE_EXTENSIONS = ["m4a", "mp3", "mp4", "mpeg", "mpga", "wav", "webm"]
+ACCEPT_FILE_EXTENSIONS = ["m4a", "mp3", "mp4", "wav"]
+CONTENT_TYPE_EXTENSION_MAP = {
+    "audio/aac": "m4a",
+    "audio/x-m4a": "m4a",
+    "audio/m4a": "m4a",
+    "audio/mpeg": "mp3",
+    "audio/mp3": "mp3",
+    "audio/mpeg3": "mp3",
+    "video/mp4": "mp4",
+    "video/mpeg4": "mp4",
+    "audio/wav": "wav",
+}
 LIMITATION_SEC = int(os.getenv("LIMITATION_SEC"))
 LIMITATION_FILE_SIZE_MB = int(os.getenv("LIMITATION_FILE_SIZE_MB"))
 LIMITATION_FILE_SIZE = LIMITATION_FILE_SIZE_MB * 1024 * 1024
@@ -78,6 +89,24 @@ def handle_audio_message(event):
             event.reply_token,
             TextSendMessage(text="音声ファイルの取得に失敗しちゃいました・・・"))
 
+@handler.add(MessageEvent, message=VideoMessage)
+def handle_video_message(event):
+    message_id = event.message.id
+    CONTENT_READY_URL = f"https://api-data.line.me/v2/bot/message/{message_id}/content/transcoding"
+    headers = {'Authorization': f'Bearer {LINEAPI_ACCESS_TOKEN}'}
+
+    status = requests.get(CONTENT_READY_URL, headers=headers).json().get("status", "")
+    while status == "processing":
+        time.sleep(1)
+        status = requests.get(CONTENT_READY_URL, headers=headers).json().get("status", "")
+    if status == "succeeded":
+        message_content = line_bot_api.get_message_content(message_id)
+        handle_message_content(event, message_content)
+    else:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text="動画ファイルの取得に失敗しちゃいました・・・"))
+
 
 @handler.default()
 def default(event):
@@ -86,10 +115,10 @@ def default(event):
         TextSendMessage(text="音声ファイルを送信してね！"))
 
 def handle_message_content(event, message_content):
-    matched_extension = re.search(r'\b(?:%s)\b' % '|'.join(ACCEPT_FILE_EXTENSIONS), message_content.content_type)
+    #matched_extension = re.search(r'\b(?:%s)\b' % '|'.join(ACCEPT_FILE_EXTENSIONS), message_content.content_type)
+    matched_extension = CONTENT_TYPE_EXTENSION_MAP.get(message_content.content_type, "")
     if matched_extension:
         file_id = event.message.id
-        matched_extension = matched_extension.group(0)
         audio_file_path = f'/audio/{file_id}.{matched_extension}'
         total_file_size = 0
         with open(audio_file_path, 'wb') as fd:
