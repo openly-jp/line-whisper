@@ -112,7 +112,7 @@ def handle_video_message(event):
 def default(event):
     line_bot_api.reply_message(
         event.reply_token,
-        TextSendMessage(text="音声ファイルを送信してね！"))
+        TextSendMessage(text="音声ファイルを送信するのじゃ！"))
 
 def handle_message_content(event, message_content):
     #matched_extension = re.search(r'\b(?:%s)\b' % '|'.join(ACCEPT_FILE_EXTENSIONS), message_content.content_type)
