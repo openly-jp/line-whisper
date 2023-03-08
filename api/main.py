@@ -175,11 +175,13 @@ def transcribe(audio_file_path, extension, user_id):
     duration_sec = audio.duration_seconds
     data = supabase.table('user_info').select('usage_sec').filter('id', 'eq', user_id).execute().data
     if len(data) == 0:
+        old_usage_sec = 0
         usage_sec = duration_sec
     else:
-        usage_sec = data[0]['usage_sec'] + duration_sec
+        old_usage_sec = data[0]['usage_sec']
+        usage_sec = duration_sec
     if usage_sec > LIMITATION_SEC:
-        remaining_sec = LIMITATION_SEC - data[0]['usage_sec']
+        remaining_sec = LIMITATION_SEC - old_usage_sec
         if remaining_sec < 1:
             raise UsageLimitError(remaining_sec=0)
         else:
@@ -188,7 +190,7 @@ def transcribe(audio_file_path, extension, user_id):
             audio = audio[:math.floor(remaining_sec * 1000)]
             # PyDub cannot export m4a file so convert it to mp3
             audio.export(audio_file_path, format=extension if extension != "m4a" else "mp3")
-            usage_sec = data[0]['usage_sec'] + remaining_sec
+            usage_sec = old_usage_sec + remaining_sec
             additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(remaining_sec) + "だけ書き起こしたぞ！"
     audio_file= open(audio_file_path, "rb")
     try:

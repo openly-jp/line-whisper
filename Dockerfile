@@ -1,7 +1,6 @@
 FROM python:3.9-slim
 
 WORKDIR /api
-COPY ./api/ .
 
 RUN apt-get update && \
     apt-get -y install ffmpeg libavcodec-extra
@@ -14,4 +13,7 @@ EXPOSE 80
 
 COPY entrypoint.sh /usr/local/bin
 RUN chmod +x /usr/local/bin/entrypoint.sh
+
+COPY ./api/ .
+
 CMD ["entrypoint.sh"]
