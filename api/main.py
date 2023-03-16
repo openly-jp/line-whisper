@@ -1,11 +1,9 @@
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import RedirectResponse
+from fastapi import FastAPI, Request, HTTPException, Response, BackgroundTasks
 from starlette.middleware.cors import CORSMiddleware
 import time
 import stripe
 import math
 import os
-import re
 import requests
 from supabase import create_client, Client
 from pydub import AudioSegment
@@ -37,6 +35,7 @@ SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+STRIPE_WEBHOOK_SECRET_KEY = os.getenv("STRIPE_WEBHOOK_SECRET_KEY")
 
 app = FastAPI()
 app.add_middleware(
@@ -75,6 +74,69 @@ async def handle_request(request: Request):
 @app.get("/health")
 async def health():
     return "ok"
+
+def stripe_callback_postprocess(event):
+    # TODO: rollback処理の追加
+    if event.type == 'payment_intent.succeeded':
+        # get session_id
+        session = stripe.checkout.Session.list(payment_intent=event.data.object.id).data[0]
+        session_id = session.id
+        # get customer_id
+        customer_id = session.customer
+        # get line_id
+        customer = stripe.Customer.retrieve(customer_id)
+        line_id = customer.name
+        # create expanded request to get line_items
+        expanded_session = stripe.checkout.Session.retrieve(session_id, expand=['line_items'])
+        line_item = expanded_session.line_items.data[0]
+        # get product_id
+        product_id = stripe.Price.retrieve(line_item.price.id).product
+        # get product
+        product = stripe.Product.retrieve(product_id)
+        # get time of product
+        product_min = int(product.metadata["min"])
+        
+        # update user_info
+        # TODO: データベースをロックしなければ、書き換え中に認識タスクを実行される可能性があり、不正使用につながる
+        data = supabase.table('user_info').select("remaining_sec").filter('id', 'eq', line_id).execute().data
+        if len(data) == 0:
+            # TODO: 実際にはデフォルト値である300sを追加するべき
+            supabase.table('user_info').insert({'id': line_id, 'stripe_customer_id': customer_id, 'remaining_sec': product_min * 60}).execute()
+        else:
+            old_remaining_sec = data[0]['remaining_sec']
+            remaining_sec = old_remaining_sec + product_min * 60
+            supabase.table('user_info').update({'remaining_sec': remaining_sec}).filter('id', 'eq', line_id).execute()
+        line_bot_api.push_message(line_id, TextSendMessage(text=f"文字起こし時間が{product_min}秒追加されたぞ!"))
+        print("payment process done")
+    elif event.type == 'payment_intent.payment_failed':
+        # TODO: これはカードが不正なときなども発生する。そのため、これは使わないほうがいい
+        line_bot_api.push_message(line_id, TextSendMessage(text=f"支払いに失敗したようじゃ...再度お試しくだされ！"))
+        print("payment failed")
+    elif event.type == 'payment_intent.cancelled':
+        line_bot_api.push_message(line_id, TextSendMessage(text=f"支払いがキャンセルされたようじゃ...再度お試しくだされ！"))
+        print("payment cancelled")
+    else:
+        raise Exception("unknown event type")
+
+@app.post("/stripe_callback")
+async def handle_stripe_callback(request: Request, background_tasks: BackgroundTasks):
+    body = await request.body()
+    signature = request.headers.get("stripe-signature", "")
+    try:
+        event = stripe.Webhook.construct_event(
+            body, signature, STRIPE_WEBHOOK_SECRET_KEY
+        )
+    except stripe.error.SignatureVerificationError as e:
+        # Invalid signature
+        return Response(status_code=401)
+    except ValueError as e:
+        # Invalid payload
+        raise Response(status_code=400)
+    # execute postprocess on another process
+    background_tasks.add_task(stripe_callback_postprocess, event)
+    #stripe_callback_postprocess(event)
+    # return 200 status code
+    return Response(status_code=200)
 
 # TODO: CSRF対策
 @app.post("/checkout")
