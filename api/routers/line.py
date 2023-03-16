@@ -42,7 +42,7 @@ CONTENT_TYPE_EXTENSION_MAP = {
     "video/mpeg4": "mp4",
     "audio/wav": "wav",
 }
-LIMITATION_SEC = int(os.getenv("LIMITATION_SEC"))
+
 LIMITATION_FILE_SIZE_MB = int(os.getenv("LIMITATION_FILE_SIZE_MB"))
 LIMITATION_FILE_SIZE = LIMITATION_FILE_SIZE_MB * 1024 * 1024
 
@@ -170,25 +170,25 @@ def transcribe(audio_file_path, extension, user_id):
         raise FileCorruptionError
     additional_comment = None
     duration_sec = audio.duration_seconds
-    data = supabase_client.table('user_info').select('usage_sec').filter('id', 'eq', user_id).execute().data
+    data = supabase_client.table('user_info').select('remaining_sec').filter('id', 'eq', user_id).execute().data
     if len(data) == 0:
-        old_usage_sec = 0
+        # create new user first
+        supabase_client.table('user_info').insert({'id': user_id}).execute()
+        data = supabase_client.table('user_info').select('remaining_sec').filter('id', 'eq', user_id).execute().data
+    old_remaining_sec = data[0]['remaining_sec']
+    new_remaining_sec = old_remaining_sec - duration_sec
+    # check recognition is possible
+    if old_remaining_sec < 1:
+        raise UsageLimitError(remaining_sec=0)
     else:
-        old_usage_sec = data[0]['usage_sec']
-    usage_sec = duration_sec + old_usage_sec
-    supabase_client.table('user_info').upsert({'id': user_id, 'usage_sec': LIMITATION_SEC if usage_sec > LIMITATION_SEC else usage_sec}).execute()
-
-    if usage_sec > LIMITATION_SEC:
-        remaining_sec = LIMITATION_SEC - old_usage_sec
-        if remaining_sec < 1:
-            raise UsageLimitError(remaining_sec=0)
-        else:
-            # transcribe only remaining time
-            # PyDub handles time in milliseconds
-            audio = audio[:math.floor(remaining_sec * 1000)]
-            # PyDub cannot export m4a file so convert it to mp3
-            audio.export(audio_file_path, format=extension if extension != "m4a" else "mp3")
-            additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(remaining_sec) + "だけ書き起こしたぞ！"
+        # to avoid data competition, update remaining_sec ASAP
+        supabase_client.table('user_info').upsert({'id': user_id, 'remaining_sec': max(new_remaining_sec, 0)}).execute()
+    # check audio cut is necessary
+    if new_remaining_sec < 0:
+        audio = audio[:math.floor(old_remaining_sec * 1000)]
+        additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(old_remaining_sec) + "だけ書き起こしたぞ！"
+        # PyDub cannot export m4a file so convert it to mp3
+        audio.export(audio_file_path, format=extension if extension != "m4a" else "mp3")
     audio_file= open(audio_file_path, "rb")
     try:
         # TODO: 以下の部分を非同期に行うことで他のユーザーのリクエストを処理できるようにする
@@ -196,7 +196,7 @@ def transcribe(audio_file_path, extension, user_id):
         text = transcript.get("text", "")
         return text, additional_comment
     except Exception as e:
-        supabase_client.table('user_info').upsert({'id': user_id, 'usage_sec': old_usage_sec}).execute()
+        supabase_client.table('user_info').upsert({'id': user_id, 'remaining_sec': old_remaining_sec}).execute()
         raise TranscriptionFailureError
     finally:
         audio_file.close()
