@@ -1,6 +1,8 @@
 from fastapi import FastAPI, Request, HTTPException
-
+from fastapi.responses import RedirectResponse
+from starlette.middleware.cors import CORSMiddleware
 import time
+import stripe
 import math
 import os
 import re
@@ -34,7 +36,16 @@ SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
+
 app = FastAPI()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"]
+)
 
 ACCEPT_FILE_EXTENSIONS = ["m4a", "mp3", "mp4", "wav"]
 CONTENT_TYPE_EXTENSION_MAP = {
@@ -64,6 +75,61 @@ async def handle_request(request: Request):
 @app.get("/health")
 async def health():
     return "ok"
+
+# TODO: CSRF対策
+@app.post("/checkout")
+async def get_checkout_url(request: Request):
+    body = await request.json()
+    user_id = body["user_id"]
+    price_id = body["price_id"]
+    # データベースからcutomer_idを取得
+    # 存在しない場合は新規作成
+    data = supabase.table('user_info').select('stripe_customer_id').filter('id', 'eq', user_id).execute().data
+    # check if data is null
+    if len(data) == 0 or data[0]["stripe_customer_id"] is None or data[0]["stripe_customer_id"] == "":
+        customer = stripe.Customer.create(
+            name=user_id,
+        )
+        supabase.table('user_info').upsert({'id': user_id, 'stripe_customer_id': customer.id}).execute()
+        print("new customer created")
+    else:
+        customer = stripe.Customer.retrieve(data[0]["stripe_customer_id"])
+    session = stripe.checkout.Session.create(
+        payment_method_types=['card'],
+        line_items=[{
+            'price': price_id,
+            'quantity': 1,
+        }],
+        mode='payment',
+        customer=customer.id,
+        success_url=os.getenv("SUCCESS_URL"),
+        cancel_url=os.getenv("CANCEL_URL"),
+    )
+    # redirect to checkout
+    return {"url": session.url}
+
+@app.get("/products")
+async def get_all_products():
+    products = stripe.Product.list()
+    prices = stripe.Price.list()
+    result_products = []
+    for product in products["data"]:
+        result_product = {}
+        result_product["id"] = product["id"]
+        result_product["name"] = product["name"]
+        result_product["description"] = product["description"]
+        result_product["images"] = product["images"]
+        result_product["price"] = None
+        # 各商品につき価格が一つであると仮定している
+        for price in prices["data"]:
+            if price["product"] == product["id"]:
+                result_product["price"] = {}
+                result_product["price"]["id"] = price["id"]
+                result_product["price"]["unit_amount"] = price["unit_amount"]
+                break
+        result_products.append(result_product)
+
+    return {"products": result_products}
 
 @handler.add(MessageEvent, message=FileMessage)
 def handle_audio_file(event):
