@@ -12,7 +12,7 @@ from linebot.exceptions import (
 )
 from pydub import AudioSegment
 from linebot.models import (
-    MessageEvent, FileMessage, TextSendMessage, AudioMessage, VideoMessage
+    MessageEvent, FileMessage, TextSendMessage, AudioMessage, VideoMessage, FlexSendMessage
 )
 import os
 from .errors import TranscriptionFailureError, FileSizeError, FileExtensionError, FileCorruptionError, UsageLimitError
@@ -135,6 +135,11 @@ def handle_message_content(event, message_content):
             line_bot_api_client.reply_message(
                 event.reply_token,
                 TextSendMessage(text=text + "\n\n" + additional_comment if additional_comment else text))
+            if additional_comment is not None:
+                line_bot_api_client.push_message(
+                    user_id,
+                    get_payment_promotion_message()
+                )
         except TranscriptionFailureError:
             line_bot_api_client.reply_message(
                 event.reply_token,
@@ -150,7 +155,8 @@ def handle_message_content(event, message_content):
         except UsageLimitError as e:
             line_bot_api_client.reply_message(
                 event.reply_token,
-                TextSendMessage(text="利用制限時間を超えちゃうようじゃ・・・\n残りの利用可能時間は" + get_remaining_time_text(e.remaining_sec) + "らしいぞ！"))
+                get_payment_promotion_message()
+            )
         except Exception as e:
             line_bot_api_client.reply_message(
                 event.reply_token,
@@ -207,3 +213,52 @@ def get_remaining_time_text(remaining_sec):
     else:
         remaining_time_text = str(int(remaining_sec // 60)) + "分"
     return remaining_time_text
+
+def get_payment_promotion_message():
+    return  FlexSendMessage(
+                alt_text='追加の文字起こし時間を購入するのじゃ！',
+                contents={
+                    "type": "bubble",
+                    "body": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "contents": [
+                        {
+                            "type": "text",
+                            "text": "もう文字起こしができないようじゃ...\n",
+                            "wrap": True,
+                        },
+                        {
+                            "type": "text",
+                            "text": "60分120円から追加の文字起こしができるぞい！",
+                            "wrap": True
+                        }
+                        ]
+                    },
+                    "footer": {
+                        "type": "box",
+                        "layout": "vertical",
+                        "spacing": "sm",
+                        "contents": [
+                        {
+                            "type": "button",
+                            "style": "link",
+                            "height": "sm",
+                            "action": {
+                            "type": "uri",
+                            "label": "購入ページへ",
+                            "uri": os.getenv("PAYMENT_PAGE_URL")
+                            },
+                            "color": "#FFFFFF"
+                        }
+                        ],
+                        "flex": 0,
+                        "backgroundColor": "#06c755"
+                    },
+                     "action": {
+                        "type": "uri",
+                        "label": "action",
+                        "uri": os.getenv("PAYMENT_PAGE_URL")
+                    }
+                }
+            )
