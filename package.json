@@ -1,5 +1,8 @@
 {
   "dependencies": {
     "localtunnel": "^2.0.2"
+  },
+  "scripts": {
+    "localtunnel": "npx localtunnel --port 80 --subdomain openlyjp-line-whisper-backend-dev"
   }
 }

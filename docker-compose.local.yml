@@ -11,16 +11,3 @@ services:
       - ./audio:/audio
       - ./logs:/logs
     env_file: .env
-
-  localtunnel:
-    container_name: "localtunnel"
-    image: efrecon/localtunnel
-    restart: on-failure
-    command:
-      --local-host server --port 80 --subdomain $SUBDOMAIN
-    environment:
-      - SUBDOMAIN=${SUBDOMAIN}
-    links:
-      - server
-    depends_on:
-      - server
