@@ -5,3 +5,5 @@ openai
 supabase
 pydub
 gunicorn
+ffmpeg-python
+srt
