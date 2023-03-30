@@ -16,6 +16,6 @@ class FileCorruptionError(Exception):
 
 class UsageLimitError(Exception):
     """Raised when the usage limit is exceeded"""
-    def __init__(self, remaining_sec):
-       self.remaining_sec = remaining_sec
+    def __init__(self, required_sec):
+       self.required_sec = required_sec
 

@@ -187,7 +187,7 @@ def handle_message_content(event, message_content):
         except UsageLimitError as e:
             line_bot_api_client.reply_message(
                 event.reply_token,
-                get_payment_promotion_message()
+                get_payment_promotion_message(e.required_sec)
             )
         except Exception as e:
             line_bot_api_client.reply_message(
@@ -238,14 +238,15 @@ def transcribe(audio_file_path, extension, user_id):
 
     # check if recognition is possible
     if old_remaining_sec < 1:
-        raise UsageLimitError(remaining_sec=0)
+        raise UsageLimitError(required_sec=audio_duration_msec / 1000)
     else:
         # to avoid data competition, update remaining_sec ASAP
         supabase_client.table('user_info').upsert({'id': user_id, 'remaining_sec': max(new_remaining_sec, 0)}).execute()
     # check if audio cut is necessary
     if new_remaining_sec < 0:
+        old_audio_duration_msec = audio_duration_msec
         audio_duration_msec = old_remaining_sec * 1000
-        additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(old_remaining_sec) + "だけ書き起こしたぞ！"
+        additional_comment = "利用制限時間を超えたようじゃ、冒頭の" + get_remaining_time_text(old_remaining_sec) + "だけ書き起こしたぞ！\n" + f"{get_remaining_time_text(old_audio_duration_msec / 1000)}の文字起こし時間が必要じゃ！"
 
     CHUNK_DURATION_MSEC = 10 * 60 * 1000
 
@@ -287,7 +288,7 @@ def get_remaining_time_text(remaining_sec):
         remaining_time_text = str(int(remaining_sec // 60)) + "分"
     return remaining_time_text
 
-def get_payment_promotion_message():
+def get_payment_promotion_message(required_sec=None):
     return  FlexSendMessage(
                 alt_text='追加の文字起こし時間を購入するのじゃ！',
                 contents={
@@ -298,12 +299,7 @@ def get_payment_promotion_message():
                         "contents": [
                         {
                             "type": "text",
-                            "text": "もう文字起こしができないようじゃ...\n",
-                            "wrap": True,
-                        },
-                        {
-                            "type": "text",
-                            "text": "60分120円から追加の文字起こしができるぞい！",
+                            "text": (f"{get_remaining_time_text(required_sec)}の文字起こし時間が必要じゃ！\n" if required_sec else "") + "60分120円から追加の文字起こしができるぞい！",
                             "wrap": True
                         }
                         ]
