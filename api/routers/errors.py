@@ -2,6 +2,10 @@ class TranscriptionFailureError(Exception):
     """Raised when the transcription fails"""
     pass
 
+class TranscriptionTimeoutError(Exception):
+    """Raised when the transcription was timeout"""
+    pass
+
 class FileSizeError(Exception):
     """Raised when the file size is too large"""
     pass

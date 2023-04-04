@@ -18,8 +18,9 @@ import os
 import ffmpeg
 import srt
 from tempfile import NamedTemporaryFile
-from .errors import TranscriptionFailureError, FileSizeError, FileExtensionError, FileCorruptionError, UsageLimitError
+from .errors import TranscriptionFailureError, FileSizeError, FileExtensionError, FileCorruptionError, UsageLimitError, TranscriptionTimeoutError
 import logging
+import threading, queue
 
 # Logging related
 logger = logging.getLogger("line-logger")
@@ -172,10 +173,10 @@ def handle_message_content(event, message_content):
                     user_id,
                     get_payment_promotion_message()
                 )
-        except TranscriptionFailureError:
+        except TranscriptionFailureError as e:
             line_bot_api_client.reply_message(
                 event.reply_token,
-                TextSendMessage(text="書き起こしに失敗したのじゃ・・・もう一度お試しくだされ！"))
+                TextSendMessage(text="文字起こしに失敗したのじゃ・・・もう一度お試しくだされ！"))
         except FileSizeError:
             line_bot_api_client.reply_message(
                 event.reply_token,
@@ -189,6 +190,10 @@ def handle_message_content(event, message_content):
                 event.reply_token,
                 get_payment_promotion_message(e.required_sec)
             )
+        except TranscriptionTimeoutError as e:
+            line_bot_api_client.reply_message(
+                event.reply_token,
+                TextSendMessage(text=f"API呼び出しがタイムアウトしたのじゃ・・・再度お試しくだされ！"))
         except Exception as e:
             line_bot_api_client.reply_message(
                 event.reply_token,
@@ -253,13 +258,34 @@ def transcribe(audio_file_path, extension, user_id):
     start_msec = 0
     processed_duration_msec = 0
 
+    def call_openai_api(audio_file_path, format, start_msec, duration_msec, t_queue):
+        chunk_audio_file = get_chunk_audio_file(audio_file_path, format, start_msec, duration_msec)
+        try:
+            result = openai.Audio.transcribe("whisper-1", chunk_audio_file, language="ja", response_format="srt")
+            t_queue.put(result)
+        except Exception as e:
+            t_queue.put(e)
+        finally:
+            chunk_audio_file.close()
+
     while processed_duration_msec < audio_duration_msec:
         duration_msec = min(CHUNK_DURATION_MSEC, audio_duration_msec - processed_duration_msec)
-        chunk_audio_file = get_chunk_audio_file(audio_file_path, extension, start_msec, duration_msec)
-
         try:
             # TODO: 以下の部分を非同期に行うことで他のユーザーのリクエストを処理できるようにする
-            chunk_result = openai.Audio.transcribe("whisper-1", chunk_audio_file, language="ja", response_format="srt")
+            #with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+            #    executor_result = executor.submit(call_openai_api, (chunk_audio_file.read()))
+            #    chunk_result = executor_result.result(timeout=10)
+            t_queue = queue.Queue()
+            t = threading.Thread(target=call_openai_api, args=(audio_file_path, extension, start_msec, duration_msec, t_queue,))
+            t.start()
+            t.join(timeout=10)
+            if t.is_alive():
+                raise TimeoutError
+            t_result = t_queue.get()
+            if isinstance(t_result, Exception):
+                raise t_result
+            else:
+                chunk_result = t_result
             srt_rows = srt.parse(chunk_result)
             for i, row in enumerate(srt_rows):
                 text = row.content.strip()
@@ -271,11 +297,13 @@ def transcribe(audio_file_path, extension, user_id):
                     result_text += ("\n" + text)
             processed_duration_msec += duration_msec
             start_msec += duration_msec
+        except TimeoutError:
+            supabase_client.table('user_info').upsert({'id': user_id, 'remaining_sec': old_remaining_sec}).execute()
+            raise TranscriptionTimeoutError
         except Exception as e:
+            logger.error(e)
             supabase_client.table('user_info').upsert({'id': user_id, 'remaining_sec': old_remaining_sec}).execute()
             raise TranscriptionFailureError
-        finally:
-            chunk_audio_file.close()
 
     return result_text, additional_comment
 
