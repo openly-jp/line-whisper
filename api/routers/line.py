@@ -278,7 +278,7 @@ def transcribe(audio_file_path, extension, user_id):
             t_queue = queue.Queue()
             t = threading.Thread(target=call_openai_api, args=(audio_file_path, extension, start_msec, duration_msec, t_queue,))
             t.start()
-            t.join(timeout=os.getenv("TIMEOUT_SEC"))
+            t.join(timeout=int(os.getenv("TIMEOUT_SEC")))
             if t.is_alive():
                 raise TimeoutError
             t_result = t_queue.get()
