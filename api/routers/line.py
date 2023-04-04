@@ -285,7 +285,7 @@ def get_remaining_time_text(remaining_sec):
     if remaining_sec < 60:
         remaining_time_text = str(int(remaining_sec)) + "秒"
     else:
-        remaining_time_text = str(int(remaining_sec // 60)) + "分"
+        remaining_time_text = str(math.floor(remaining_sec / 60)) + "分"
     return remaining_time_text
 
 def get_payment_promotion_message(required_sec=None):
