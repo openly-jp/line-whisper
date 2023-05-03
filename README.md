@@ -21,3 +21,16 @@ LINE Whisper is a simple LINE bot that can easily transcribe speech to text.
 - Set `.env` based on `.env.template`
 - Start up docker container
   - `docker compose -f docker-compose.prod.yml up --build -d`
+
+
+
+### logrotate
+- logrotate is a service to delete logs periodically.
+- Based on the setting file (logrotate.conf), delete and archive (compress) old logs once per week.
+- Run command below.
+```bash
+sudo chmod 744 logrotate.conf # avoid non-root writable
+sudo logrotate -d logrotate.conf # check if error is caused
+sudo logrotate logrotate.conf
+```
+
