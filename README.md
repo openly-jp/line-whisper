@@ -83,10 +83,10 @@ LINE Whisper is a simple LINE bot that can easily transcribe speech to text.
 ### logrotate
 - logrotate is a service to delete logs periodically.
 - Based on the setting file (logrotate.conf), delete and archive (compress) old logs once per week.
-- Run command below.
-```bash
-sudo chmod 744 logrotate.conf # avoid non-root writable
-sudo logrotate -d logrotate.conf # check if error is caused
-sudo logrotate logrotate.conf
-```
+- Run command below to start logrotate.
+  ```bash
+  sudo chmod 744 logrotate.conf # avoid non-root writable
+  sudo logrotate -d logrotate.conf # check if error is caused
+  sudo logrotate logrotate.conf
+  ```
 
