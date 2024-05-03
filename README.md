@@ -32,8 +32,8 @@ LINE Whisper is a simple LINE bot that can easily transcribe speech to text.
   sudo systemctl status nginx # check if nginx launched
   ```
 - Save SSL certificate and key to the fololwing path.
-  - ```/etc/ssl/openly.jp.pem```
-  - ```/etc/ssl/openly.jp.key```
+  - ```/etc/ssl/[your_domain].pem```
+  - ```/etc/ssl/[your_domain].key```
   - Notice:
     - If you still set Cloudflare DNS setting as "Proxied", the above certificate should be a ```origin server certificate```.
 - Create nginx conf file.
@@ -45,15 +45,15 @@ LINE Whisper is a simple LINE bot that can easily transcribe speech to text.
   server {
     listen 80 default_server;
     listen [::]:80 default_server;
-    return 301 https://line-api.openly.jp$request_uri;
+    return 301 https://line-api.[your_domain]$request_uri;
   }
 
   server {
     listen 443;
     ssl on;
 
-    ssl_certificate      /etc/ssl/openly.jp.pem;
-    ssl_certificate_key  /etc/ssl/openly.jp.key;
+    ssl_certificate      /etc/ssl/[your_domain].pem;
+    ssl_certificate_key  /etc/ssl/[your_domain].key;
 
     location /line {
           proxy_pass http://localhost:8081/line;
